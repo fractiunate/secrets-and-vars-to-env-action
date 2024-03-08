@@ -62,6 +62,9 @@ function run() {
             const secretsJson = core.getInput('secrets', {
                 required: true
             });
+            const varialbesJson = core.getInput('variables', {
+                required: true
+            });
             const keyPrefix = core.getInput('prefix');
             const includeListStr = core.getInput('include');
             const excludeListStr = core.getInput('exclude');
@@ -84,6 +87,18 @@ with:
       secrets: \${{ toJSON(secrets) }}
 `);
             }
+            let variables;
+            try {
+                variables = JSON.parse(varialbesJson);
+            }
+            catch (e) {
+                throw new Error(`Cannot parse JSON variables.
+Make sure you add the following to this action:
+
+with:
+      variables: \${{ toJSON(vars) }}
+`);
+            }
             let includeList = null;
             if (includeListStr.length) {
                 includeList = includeListStr.split(',').map(key => key.trim());
@@ -93,37 +108,8 @@ with:
             }
             core.debug(`Using include list: ${includeList === null || includeList === void 0 ? void 0 : includeList.join(', ')}`);
             core.debug(`Using exclude list: ${excludeList.join(', ')}`);
-            for (const key of Object.keys(secrets)) {
-                if (includeList && !includeList.some(inc => key.match(new RegExp(inc)))) {
-                    continue;
-                }
-                if (excludeList.some(inc => key.match(new RegExp(inc)))) {
-                    continue;
-                }
-                let newKey = keyPrefix.length ? `${keyPrefix}${key}` : key;
-                if (convert.length) {
-                    if (!convertTypes[convert]) {
-                        throw new Error(`Unknown convert value "${convert}". Available: ${Object.keys(convertTypes).join(', ')}`);
-                    }
-                    if (!convertPrefix) {
-                        newKey = `${keyPrefix}${convertTypes[convert](newKey.replace(keyPrefix, ''))}`;
-                    }
-                    else {
-                        newKey = convertTypes[convert](newKey);
-                    }
-                }
-                if (process.env[newKey]) {
-                    if (override) {
-                        core.warning(`Will re-write "${newKey}" environment variable.`);
-                    }
-                    else {
-                        core.info(`Skip overwriting secret ${newKey}`);
-                        continue;
-                    }
-                }
-                core.exportVariable(newKey, secrets[key]);
-                core.info(`Exported secret ${newKey}`);
-            }
+            exportDataToEnv(secrets, "secret", includeList, excludeList, keyPrefix, convert, convertPrefix, override);
+            exportDataToEnv(variables, "variable", includeList, excludeList, keyPrefix, convert, convertPrefix, override);
         }
         catch (error) {
             if (error instanceof Error)
@@ -132,6 +118,39 @@ with:
     });
 }
 exports["default"] = run;
+function exportDataToEnv(data_records, type, includeList, excludeList, keyPrefix, convert, convertPrefix, override) {
+    for (const key of Object.keys(data_records)) {
+        if (includeList && !includeList.some(inc => key.match(new RegExp(inc)))) {
+            continue;
+        }
+        if (excludeList.some(inc => key.match(new RegExp(inc)))) {
+            continue;
+        }
+        let newKey = keyPrefix.length ? `${keyPrefix}${key}` : key;
+        if (convert.length) {
+            if (!convertTypes[convert]) {
+                throw new Error(`Unknown convert value "${convert}". Available: ${Object.keys(convertTypes).join(', ')}`);
+            }
+            if (!convertPrefix) {
+                newKey = `${keyPrefix}${convertTypes[convert](newKey.replace(keyPrefix, ''))}`;
+            }
+            else {
+                newKey = convertTypes[convert](newKey);
+            }
+        }
+        if (process.env[newKey]) {
+            if (override) {
+                core.warning(`Will re-write "${newKey}" environment variable.`);
+            }
+            else {
+                core.info(`Skip overwriting ${type} ${newKey}`);
+                continue;
+            }
+        }
+        core.exportVariable(newKey, data_records[key]);
+        core.info(`Exported ${type} ${newKey}`);
+    }
+}
 if (require.main === require.cache[eval('__filename')]) {
     run();
 }
